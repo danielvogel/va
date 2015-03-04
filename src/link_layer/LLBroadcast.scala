@@ -9,15 +9,30 @@ import scala.collection.mutable.ListBuffer
 case class Msg(initiatorId: Byte, payload: String)
 case class FatherMsg(fatherId: NodeId)
 case class NeighbourMsg(neighbours: List[NodeId])
+case class StartMsg(msg: String)
 
-class Initiator extends Actor {
+class Initiator(val comInterface: Broadcaster) extends Actor {
+  var rec = 0
+
   def receive = {
-    case _ =>
-      println("ok")
+    case StartMsg(msg) => {
+      for (n <- comInterface.remoteIds) {
+        comInterface.sendUserMsg(n, msg, comInterface.localId)
+      }
+    }
+    case str: String => {
+      rec = rec + 1
+      if (rec == comInterface.remoteIds.length) {
+        println(s"Initiator decides")
+        rec = 0
+      }
+    }
+    case _ => println("ERROR I")
   }
+
 }
 
-class Follower(val comInterface : Broadcaster) extends Actor {
+class Follower(val comInterface: Broadcaster, initiatorId: Byte) extends Actor {
   var father: Option[NodeId] = None
 
   var neighbors: Option[List[NodeId]] = None
@@ -33,10 +48,10 @@ class Follower(val comInterface : Broadcaster) extends Actor {
       if (rec == 1) {
         println(s"Actor gets informed by " + sender.path)
         for (q <- neighbors.get) {
-          comInterface.sendUserMsg(q, str)
+          comInterface.sendUserMsg(q, str, initiatorId)
         }
       } else if (rec == neighbors.get.length) {
-        comInterface .sendUserMsg(father.get, str)
+        comInterface.sendUserMsg(father.get, str, initiatorId)
         rec = 0
       }
     }
@@ -62,7 +77,7 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
           var value: Option[ActorRef] = followers.get(id)
           var follower: ActorRef = null
           if (value == None) {
-            follower = system.actorOf(Props[Follower], name = "Follower_" + id)
+            follower = system.actorOf(Props(classOf[Follower], this, id), name = "Follower_" + id)
             followers + (id -> follower)
 
             follower ! FatherMsg(from)
@@ -77,17 +92,10 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
     }
   }
 
-  def sendUserMsg(id: NodeId, str: String) {
+  def sendUserMsg(id: NodeId, str: String, initiatorId: Byte) {
     println("DEBUG client should send " + str)
-    sendMsg(id, Msg(localId, str))
+    sendMsg(id, Msg(initiatorId, str))
   }
-
-  def sendBroadcast(str: String) {
-    println("DEBUG client starts broadcast " + str)
-    for (n <- remoteIds)
-      sendUserMsg(n, str)
-  }
-
 }
 
 object BroadcastCodec extends Codec[Msg] {
