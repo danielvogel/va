@@ -7,6 +7,8 @@ import link_layer.LinkLayer._
 import scala.collection.mutable.ListBuffer
 
 case class Msg(initiatorId: Byte, payload: String)
+case class FatherMsg(fatherId: NodeId)
+case class NeighbourMsg(neighbours: List[NodeId])
 
 class Initiator extends Actor {
   def receive = {
@@ -15,23 +17,62 @@ class Initiator extends Actor {
   }
 }
 
-class Follower extends Actor {
+class Follower(val comInterface : Broadcaster) extends Actor {
+  var father: Option[NodeId] = None
+
+  var neighbors: Option[List[NodeId]] = None
+  var rec = 0
   def receive = {
-    case _ =>
-      println("ok")
+    case FatherMsg(fatherId) =>
+      father = Some(fatherId)
+    case NeighbourMsg(neighboursList) =>
+      neighbors = Some(neighboursList)
+    case str: String => {
+      rec = rec + 1
+
+      if (rec == 1) {
+        println(s"Actor gets informed by " + sender.path)
+        for (q <- neighbors.get) {
+          comInterface.sendUserMsg(q, str)
+        }
+      } else if (rec == neighbors.get.length) {
+        comInterface .sendUserMsg(father.get, str)
+        rec = 0
+      }
+    }
   }
 }
 
-abstract class Broadcaster extends ProtocolHandler[Msg](1, BroadcastCodec) {
-  val remoteIds: ListBuffer[NodeId]
+abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHandler[Msg](1, BroadcastCodec) {
+
+  val remoteIds: List[NodeId]
   val localId: Byte
 
-  var initiator: Initiator = null
-  var follower: List[Follower] = List()
+  var initiator: ActorRef = null;
+  var followers: Map[Byte, ActorRef] = Map()
 
   override def acceptMsgFrom(msg: Msg, from: NodeId): Unit = {
     msg match {
-      case Msg(id, str) => println(s"$id Client received $str");
+      case Msg(id, str) =>
+        println(s"$id Client received $str");
+        if (id == localId) {
+          // is initiator
+          initiator ! str
+        } else {
+          var value: Option[ActorRef] = followers.get(id)
+          var follower: ActorRef = null
+          if (value == None) {
+            follower = system.actorOf(Props[Follower], name = "Follower_" + id)
+            followers + (id -> follower)
+
+            follower ! FatherMsg(from)
+            follower ! NeighbourMsg(remoteIds.filterNot(e => e == from))
+
+          } else {
+            follower = value.get
+          }
+          follower ! str
+        }
       case x: Any => println("Client received msg with wrong format " + msg)
     }
   }
@@ -94,7 +135,7 @@ object LLBroadcast extends App {
 
   object BroadcastInst extends Broadcaster {
     val localId: Byte = localNodeName
-    val remoteIds: ListBuffer[NodeId] = nodeNames
+    val remoteIds: List[NodeId] = nodeNames.toList
     val ll: LinkLayer = linkLayer
   }
 
@@ -103,7 +144,7 @@ object LLBroadcast extends App {
   Thread.sleep(1000)
 
   for (i <- 1 to 10) {
-    BroadcastInst.sendUserMsg("Hallo Nr " + i)
+    //BroadcastInst.sendUserMsg("Hallo Nr " + i)
   }
 
 }
