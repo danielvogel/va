@@ -8,7 +8,7 @@ import scala.collection.mutable.ListBuffer
 
 case class Msg(initiatorId: Byte, payload: String)
 case class FatherMsg(fatherId: NodeId)
-case class NeighbourMsg(neighbours: List[NodeId])
+case class NeighbourMsg(neighbours: List[NodeId], msg: String)
 case class StartMsg(msg: String)
 
 class Initiator(val comInterface: Broadcaster) extends Actor {
@@ -23,7 +23,7 @@ class Initiator(val comInterface: Broadcaster) extends Actor {
     case str: String => {
       rec = rec + 1
       if (rec == comInterface.remoteIds.length) {
-        println(s"Initiator decides")
+        println("Initiator decides")
         rec = 0
       }
     }
@@ -40,19 +40,27 @@ class Follower(val comInterface: Broadcaster, initiatorId: Byte) extends Actor {
   def receive = {
     case FatherMsg(fatherId) =>
       father = Some(fatherId)
-    case NeighbourMsg(neighboursList) =>
+    case NeighbourMsg(neighboursList, msg) => {
       neighbors = Some(neighboursList)
+      for (q <- neighbors.get) {
+        comInterface.sendUserMsg(q, msg, initiatorId)
+      }
+      rec = rec + 1
+
+      if (rec == neighbors.get.length + 1) {
+        comInterface.sendUserMsg(father.get, msg, initiatorId)
+        rec = 0
+        println(s"Follower finished local broadcast from '$initiatorId')")
+      }
+    }
+
     case str: String => {
       rec = rec + 1
 
-      if (rec == 1) {
-        println(s"Actor gets informed by " + sender.path)
-        for (q <- neighbors.get) {
-          comInterface.sendUserMsg(q, str, initiatorId)
-        }
-      } else if (rec == neighbors.get.length) {
+      if (rec == neighbors.get.length + 1) {
         comInterface.sendUserMsg(father.get, str, initiatorId)
         rec = 0
+        println(s"Follower finished local broadcast from '$initiatorId')")
       }
     }
   }
@@ -69,32 +77,38 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
   override def acceptMsgFrom(msg: Msg, from: NodeId): Unit = {
     msg match {
       case Msg(id, str) =>
-        println(s"$id Client received $str");
         if (id == localId) {
           // is initiator
           initiator ! str
+          println("Initiator received answer from '" + id + "'");
         } else {
           var value: Option[ActorRef] = followers.get(id)
           var follower: ActorRef = null
           if (value == None) {
-            follower = system.actorOf(Props(classOf[Follower], this, id), name = "Follower_" + id)
+            follower = system.actorOf(Props(classOf[Follower], this, id), name = "Follower_" + id + "_" + from)
             followers + (id -> follower)
 
             follower ! FatherMsg(from)
-            follower ! NeighbourMsg(remoteIds.filterNot(e => e == from))
+            follower ! NeighbourMsg(remoteIds.filterNot(e => e == from), str)
 
           } else {
             follower = value.get
+            follower ! str
           }
-          follower ! str
+
         }
       case x: Any => println("Client received msg with wrong format " + msg)
     }
   }
 
   def sendUserMsg(id: NodeId, str: String, initiatorId: Byte) {
-    println("DEBUG client should send " + str)
+    println(s"Sending msg '$str' to '$id' (initiator: '$initiatorId'")
     sendMsg(id, Msg(initiatorId, str))
+  }
+
+  def startBroadcast(msg: String) {
+    initiator = system.actorOf(Props(classOf[Initiator], this), name = "Initiator")
+    initiator ! StartMsg(msg)
   }
 }
 
@@ -114,7 +128,6 @@ object BroadcastCodec extends Codec[Msg] {
 
   def decode(bytes: Array[Byte]): Msg = {
     Msg(bytes(0), new String(bytes, 1, bytes.length - 1))
-
   }
 }
 
@@ -149,10 +162,10 @@ object LLBroadcast extends App {
 
   linkLayer.registerProtocolHandler(BroadcastInst)
 
+  println("Starting node " + localNodeName)
+
   Thread.sleep(1000)
 
-  for (i <- 1 to 10) {
-    //BroadcastInst.sendUserMsg("Hallo Nr " + i)
-  }
+  BroadcastInst.startBroadcast("Hallo")
 
 }
