@@ -37,6 +37,9 @@ class Follower(val comInterface: Broadcaster, initiatorId: Byte) extends Actor {
 
   var neighbors: Option[List[NodeId]] = None
   var rec = 0
+  
+  println(s"Creating new follower '$this'")
+  
   def receive = {
     case FatherMsg(fatherId) =>
       father = Some(fatherId)
@@ -83,10 +86,11 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
           println("Initiator received answer from '" + id + "'");
         } else {
           var value: Option[ActorRef] = followers.get(id)
+          println(s"Accepting msg with value $value")
           var follower: ActorRef = null
           if (value == None) {
-            follower = system.actorOf(Props(classOf[Follower], this, id), name = "Follower_" + id + "_" + from)
-            followers + (id -> follower)
+            follower = system.actorOf(Props(classOf[Follower], this, id), name = "Follower_" + id)
+            followers += (id -> follower)
 
             follower ! FatherMsg(from)
             follower ! NeighbourMsg(remoteIds.filterNot(e => e == from), str)
@@ -102,7 +106,7 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
   }
 
   def sendUserMsg(id: NodeId, str: String, initiatorId: Byte) {
-    println(s"Sending msg '$str' to '$id' (initiator: '$initiatorId'")
+    println(s"Sending msg '$str' to '$id' (initiator: '$initiatorId')")
     sendMsg(id, Msg(initiatorId, str))
   }
 
