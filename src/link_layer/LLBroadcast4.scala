@@ -5,6 +5,8 @@ import akka.actor.{ Actor, ActorRef, Props, ActorSystem }
 import physical_layer.{ Codec, UDPNetworkDevice, PhysicalLayer }
 import link_layer.LinkLayer._
 import scala.collection.mutable.ListBuffer
+import app_layer.MutexHandler
+import app_layer.Philosoph
 
 
 object LLBroadcast4 extends App {
@@ -36,10 +38,14 @@ object LLBroadcast4 extends App {
     val localId: Byte = localNodeName
     val remoteIds: List[NodeId] = nodeNames.toList
     val ll: LinkLayer = linkLayer
+    lazy val mutexHandler: Option[ActorRef] = Some(mutHandler)
   }
+  
+  val mutHandler = system.actorOf(Props(classOf[MutexHandler], BroadcastInst,localNodeName.toInt,"mutexB","mutexC"), name = "MutexHandler" )
 
   linkLayer.registerProtocolHandler(BroadcastInst)
   println("Starting node " + localNodeName)
 
-  Thread.sleep(1000)
+  Thread.sleep(10000)
+  new Philosoph(mutHandler).start()
 }

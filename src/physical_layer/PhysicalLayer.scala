@@ -4,7 +4,7 @@ trait NetworkDevice {
   var driver : NetworkDriver[Any] = null 
   
   // low level send
-  def sendWire(msg: Array[Byte]) { println("DEBUG NetworkDevice undefined sendWire called") }            
+  def sendWire(msg: Array[Byte]) { }            
  
   // register callback routine for this device
   def register[MSG_T <: Any](driver: NetworkDriver[MSG_T]) : Unit = {
@@ -24,7 +24,6 @@ abstract class NetworkDriver[MSG_T <: Any](val codec: Codec[MSG_T]) {
   
   // used to transfer msgs; to be used by derived classes 
   final def sendMsg(msg: MSG_T) : Unit = {
-    println("DEBUG NetworkDriver sendMsg: should send " + msg + " usind device " + device)
     val bytes : Array[Byte] = codec.encode(msg)
     device.sendWire(bytes)
   }

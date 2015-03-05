@@ -16,7 +16,6 @@ abstract class ProtocolHandler[MSG_T <: Any](val protId: ProtocolId, val codec: 
   
   // used to transfer msgs; to be used by derived classes 
   protected final def sendMsg(dest: NodeId, msg: MSG_T) : Unit = {
-    println("DEBUG protocolHandler sendMsg: should send " + msg + " to " + dest)
     val bytes : Array[Byte] = codec.encode(msg)
     ll.sendTo(protId, dest, bytes)
   }
@@ -64,7 +63,6 @@ abstract class LinkLayer(val localAddr: NodeId) {
   private var nodeToDevice: Map[NodeId, DeviceId] = Map[NodeId, DeviceId]()
   
   def sendTo(protId: ProtocolId, dest: NodeId, payload: Array[Byte]) {
-    println("DEBUG LinkLayer sendTo: should send " + payload + " to " + dest + " with protId " + protId)
     physicalLayer.devices(nodeToDevice(dest)).driver.sendMsg(Frame(protId, payload))
   }  
   

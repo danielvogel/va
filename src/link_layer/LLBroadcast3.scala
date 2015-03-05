@@ -35,6 +35,7 @@ object LLBroadcast3 extends App {
     val localId: Byte = localNodeName
     val remoteIds: List[NodeId] = nodeNames.toList
     val ll: LinkLayer = linkLayer
+    val mutexHandler = None
   }
 
   linkLayer.registerProtocolHandler(BroadcastInst)

@@ -21,6 +21,7 @@ class Initiator(val comInterface: Broadcaster) extends Actor {
     case StartMsg(msg) => {
       if (isBroadcasting) {
         broadcastQueue.enqueue(msg)
+        println("Currently executing. Storing message: 'msg' to queue")
       } else {
         sendBroadcast(msg)
       }
@@ -28,7 +29,7 @@ class Initiator(val comInterface: Broadcaster) extends Actor {
     case str: String => {
       rec = rec + 1
       if (rec == comInterface.remoteIds.length) {
-        println("Initiator decides")
+        println(s"Initiator finished. Current queue size: $broadcastQueue.size()")
         rec = 0
         isBroadcasting = false
         if (!broadcastQueue.isEmpty) {
@@ -36,7 +37,7 @@ class Initiator(val comInterface: Broadcaster) extends Actor {
         }
       }
     }
-    case _ => println("ERROR I")
+    case _ => println("Error in Initiator")
   }
 
   def sendBroadcast(msg: String) {
@@ -45,7 +46,6 @@ class Initiator(val comInterface: Broadcaster) extends Actor {
       comInterface.sendUserMsg(n, msg, comInterface.localId)
     }
   }
-
 }
 
 class Follower(val comInterface: Broadcaster, initiatorId: Byte) extends Actor {
@@ -89,7 +89,7 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
 
   val remoteIds: List[NodeId]
   val localId: Byte
-  var mutexHandler: Option[ActorRef] = None
+  val mutexHandler: Option[ActorRef]
 
   var initiator: ActorRef = null;
   var followers: Map[Byte, ActorRef] = Map()
@@ -100,12 +100,17 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
         if (id == localId) {
           // is initiator
           initiator ! str
-          println("Initiator received answer from '" + id + "'");
+          //println("Initiator received answer from '" + id + "'");
         } else {
+
+          if (mutexHandler.nonEmpty)
+            mutexHandler.get ! str
+
           var value: Option[ActorRef] = followers.get(id)
-          println(s"Accepting msg with value $value")
+          println(s"Accepting msg '$str' with id '$id'")
           var follower: ActorRef = null
-          if (value == None) {
+          if (value.isEmpty) {
+          println(s"Could not find follower, creating new one.")
             follower = system.actorOf(Props(classOf[Follower], this, id), name = "Follower_" + id)
             followers += (id -> follower)
 
@@ -113,6 +118,7 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
             follower ! NeighbourMsg(remoteIds.filterNot(e => e == from), str)
 
           } else {
+         	println(s"Could find follower '$value.get'")
             follower = value.get
             follower ! str
           }
@@ -181,6 +187,7 @@ object LLBroadcast extends App {
     val localId: Byte = localNodeName
     val remoteIds: List[NodeId] = nodeNames.toList
     val ll: LinkLayer = linkLayer
+    val mutexHandler = None
   }
 
   linkLayer.registerProtocolHandler(BroadcastInst)
@@ -189,6 +196,5 @@ object LLBroadcast extends App {
 
   Thread.sleep(1000)
 
-  BroadcastInst.startBroadcast("Hallo")
-
+  //BroadcastInst.startBroadcast("Hallo")
 }
