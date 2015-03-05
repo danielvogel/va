@@ -5,6 +5,7 @@ import akka.actor.{ Actor, ActorRef, Props, ActorSystem }
 import physical_layer.{ Codec, UDPNetworkDevice, PhysicalLayer }
 import link_layer.LinkLayer._
 import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.Queue
 
 case class Msg(initiatorId: Byte, payload: String)
 case class FatherMsg(fatherId: NodeId)
@@ -13,11 +14,15 @@ case class StartMsg(msg: String)
 
 class Initiator(val comInterface: Broadcaster) extends Actor {
   var rec = 0
+  var broadcastQueue: Queue[String] = Queue()
+  var isBroadcasting = false
 
   def receive = {
     case StartMsg(msg) => {
-      for (n <- comInterface.remoteIds) {
-        comInterface.sendUserMsg(n, msg, comInterface.localId)
+      if (isBroadcasting) {
+        broadcastQueue.enqueue(msg)
+      } else {
+        sendBroadcast(msg)
       }
     }
     case str: String => {
@@ -25,9 +30,20 @@ class Initiator(val comInterface: Broadcaster) extends Actor {
       if (rec == comInterface.remoteIds.length) {
         println("Initiator decides")
         rec = 0
+        isBroadcasting = false
+        if (!broadcastQueue.isEmpty) {
+          sendBroadcast(broadcastQueue.dequeue)
+        }
       }
     }
     case _ => println("ERROR I")
+  }
+
+  def sendBroadcast(msg: String) {
+    isBroadcasting = true
+    for (n <- comInterface.remoteIds) {
+      comInterface.sendUserMsg(n, msg, comInterface.localId)
+    }
   }
 
 }
@@ -37,9 +53,9 @@ class Follower(val comInterface: Broadcaster, initiatorId: Byte) extends Actor {
 
   var neighbors: Option[List[NodeId]] = None
   var rec = 0
-  
+
   println(s"Creating new follower '$this'")
-  
+
   def receive = {
     case FatherMsg(fatherId) =>
       father = Some(fatherId)
@@ -73,6 +89,7 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
 
   val remoteIds: List[NodeId]
   val localId: Byte
+  var mutexHandler: Option[ActorRef] = None
 
   var initiator: ActorRef = null;
   var followers: Map[Byte, ActorRef] = Map()
@@ -111,7 +128,9 @@ abstract class Broadcaster(implicit val system: ActorSystem) extends ProtocolHan
   }
 
   def startBroadcast(msg: String) {
-    initiator = system.actorOf(Props(classOf[Initiator], this), name = "Initiator")
+    if (initiator == null) {
+      initiator = system.actorOf(Props(classOf[Initiator], this), name = "Initiator")
+    }
     initiator ! StartMsg(msg)
   }
 }
